@@ -1,0 +1,9 @@
+applications:
+- name: gotell
+  memory: 128M
+  disk: 128M
+  instances: 1
+  path: .
+  buildback: https://github.com/cloudfoundry/go-buildpack.git
+  services:
+  - redis
