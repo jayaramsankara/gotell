@@ -19,7 +19,7 @@ gotell uses redis pub-sub in order to perform a stateless way of websocket notif
 * Support for generic JSON structure as message's Value
 * APNS support
 * GCM support
-* Carve out the cloudfoundry app part separately so that this one becomes a generic lib
+
 
 #How to Use this library
 
