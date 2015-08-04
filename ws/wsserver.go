@@ -4,7 +4,6 @@ package ws
 import (
 	"os"
 	"encoding/json"
-	cfenv "github.com/cloudfoundry-community/go-cfenv"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
 	"gopkg.in/redis.v3"
@@ -77,13 +76,13 @@ func (conn *wsconnection) sendMessages() {
 	ticker := time.NewTicker(pingPeriod)
 	defer func() {
 		ticker.Stop()
-		log.Println("Exiting sendMessages. Removing the connection mapped to " + conn.clientId)
+		logs.Println("Exiting sendMessages. Removing the connection mapped to " + conn.clientId)
 		conn.active = false
-		log.Println("Closing websocket connection for ", conn.clientId)
+		logs.Println("Closing websocket connection for ", conn.clientId)
 		conn.ws.Close()
-		log.Println("Removing subscription to redis channel for ",conn.clientId)
+		logs.Println("Removing subscription to redis channel for ",conn.clientId)
 		receiver.Unsubscribe(conn.clientId)
-		log.Println("Exiting sendMessages. Removing the connection mapped to " + conn.clientId)
+		logs.Println("Exiting sendMessages. Removing the connection mapped to " + conn.clientId)
   		delete(clientConnections, conn.clientId)
 	}()
 	
@@ -99,11 +98,13 @@ func (conn *wsconnection) sendMessages() {
 			}
 			logs.Println("Sending WS message for client  " + clientId)
 			if err := conn.write(websocket.TextMessage, message); err != nil {
+				log.Println("Error while sending WS message  ", conn.clientId, message, err)
 				return
 			}
 		case <-ticker.C:
 			logs.Println("Sending Ping WS message for client  " + clientId)
 			if err := conn.write(websocket.PingMessage, []byte{}); err != nil {
+				log.Println("Error while sending WS ping message  ", conn.clientId, err)
 				return
 			}
 		}
@@ -116,7 +117,7 @@ func (conn *wsconnection) receiveMessages() {
 	go func () {
 		    for {
 		        if _, _, err := conn.ws.NextReader(); err != nil {
-		            
+		            log.Println("Error while receiving WS pong message  ", conn.clientId, err)
 					conn.active=false
 					conn.ws.Close()
 		            break
@@ -139,7 +140,7 @@ func (conn *wsconnection) write(messageType int, payload []byte) error {
 	return conn.ws.WriteMessage(messageType, payload)
 }
 
-func InitServer() error {
+func InitServer(httpHost string, httpPort int , redisConf * redis.Options) error {
 	
 	logs.Println("Initiating Websocket server with redis pub-sub")
 	
@@ -147,48 +148,9 @@ func InitServer() error {
 	r.HandleFunc("/ws/{clientid}", serveWs).Methods("GET")
 	r.HandleFunc("/notify/{clientid}", serveNotify).Methods("POST")
 
-	var httpHost = "localhost"
-	var httpPort = 8080
+	receiver = redis.NewClient(redisConf).PubSub()
 
-	var redisHost = "72.163.168.10"
-	var redisPort = "6379"
-
-	appEnv, err := cfenv.Current()
-	if err != nil {
-		log.Println("WSServer: Failed to read CF Environment variables ", err)
-		//os.Exit(15)
-	} else {
-		httpHost = appEnv.Host
-		httpPort = appEnv.Port
-		
-		services, err := appEnv.Services.WithName("redis")
-		if err != nil {
-			log.Println("Failed to read redis details from VCAP_SERVICES . ", err)
-			//os.Exit(20)
-		} else {
-			redisconn := services.Credentials
-			redisHost, _ = redisconn["host"].(string)
-			redisPort, _ = redisconn["port"].(string)
-		}
-	}
-
-	
-
-	receiver = redis.NewClient(&redis.Options{
-		Addr:     redisHost + ":" + redisPort,
-		Password: "", // no password set
-		DB:       0,  // use default DB
-		MaxRetries : 3, // Max retries on operation errors
-	}).PubSub()
-
-	var publisher = redis.NewClient(&redis.Options{
-		Addr:     redisHost + ":" + redisPort,
-		Password: "", // no password set
-		DB:       0,  // use default DB
-		PoolTimeout : 3, // Pool timeout
-		MaxRetries : 3,
-		PoolSize : maxRedisConn,
-	})
+	var publisher = redis.NewClient(redisConf)
 
 	logs.Println("Initialized redis clients for pub and sub.")
 	
@@ -215,7 +177,7 @@ func InitServer() error {
 			    case *redis.Pong:
 			        logs.Println("Pong message from channel : ",msg)
 			    default:
-			        log.Printf("unknown message: %#v", msgi)
+			        log.Printf("Error unknown message: %#v", msgi)
 			    }
 	
 				
