@@ -39,7 +39,7 @@ var upgrader = websocket.Upgrader{
 
 var clientConnections = map[string]*wsconnection{}
 
-var redisSender = make(chan *NotifyData, maxRedisConn)
+var redisSender chan *NotifyData
 
 var receiver *redis.PubSub
 
@@ -148,6 +148,7 @@ func InitServer(httpHost string, httpPort int , redisConf * redis.Options) error
 	r.HandleFunc("/ws/{clientid}", serveWs).Methods("GET")
 	r.HandleFunc("/notify/{clientid}", serveNotify).Methods("POST")
 
+    redisSender = make(chan *NotifyData, redisConf.PoolSize)
 	receiver = redis.NewClient(redisConf).PubSub()
 
 	var publisher = redis.NewClient(redisConf)
