@@ -71,6 +71,11 @@ type NotifyData struct {
 	Message string
 }
 
+func (conn  *wsconnection) Close() {
+	conn.write(websocket.CloseMessage, []byte{})
+	conn.ws.Close()
+}
+
 func (conn *wsconnection) sendMessages() {
 	clientId := conn.clientId
 	ticker := time.NewTicker(pingPeriod)
@@ -79,7 +84,7 @@ func (conn *wsconnection) sendMessages() {
 		logs.Println("Exiting sendMessages. Removing the connection mapped to " + conn.clientId)
 		conn.active = false
 		logs.Println("Closing websocket connection for ", conn.clientId)
-		conn.ws.Close()
+		conn.Close()
 		logs.Println("Removing subscription to redis channel for ",conn.clientId)
 		receiver.Unsubscribe(conn.clientId)
 		logs.Println("Exiting sendMessages. Removing the connection mapped to " + conn.clientId)
@@ -90,10 +95,7 @@ func (conn *wsconnection) sendMessages() {
 		select {
 		case message, ok := <-conn.send:
 			if !ok {
-
-				conn.write(websocket.CloseMessage, []byte{})
-
-				log.Println("Error while fetching message from channel for  ", conn.clientId)
+                log.Println("No more messages to be sent to WS connection from channel for  ", conn.clientId)
 				return
 			}
 			logs.Println("Sending WS message for client  " + clientId)
@@ -119,7 +121,7 @@ func (conn *wsconnection) receiveMessages() {
 		        if _, _, err := conn.ws.NextReader(); err != nil {
 		            log.Println("Error while receiving WS pong message  ", conn.clientId, err)
 					conn.active=false
-					conn.ws.Close()
+					conn.Close()
 		            break
 		        }
 		    }
