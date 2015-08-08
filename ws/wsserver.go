@@ -2,15 +2,15 @@
 package ws
 
 import (
-	"os"
 	"encoding/json"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
 	"gopkg.in/redis.v3"
 	"log"
 	"net/http"
-	"strconv"
+	"os"
 	"time"
+	"github.com/jayaramsankara/gotell/apns"
 )
 
 const (
@@ -25,10 +25,10 @@ const (
 
 	// Maximum message size allowed from peer.
 	maxMessageSize = 512
-	
+
 	// Max NUmber of Redis connections maintained for publishing events
 	// This is same as the Go Channel buffer size for sending events for redis
-	maxRedisConn =  50
+	maxRedisConn = 50
 )
 
 var upgrader = websocket.Upgrader{
@@ -43,7 +43,9 @@ var redisSender chan *NotifyData
 
 var receiver *redis.PubSub
 
-var logs = log.New(os.Stdout,"INFO",log.LstdFlags)
+var logs = log.New(os.Stdout, "INFO", log.LstdFlags)
+
+var Logs = logs
 
 type wsconnection struct {
 	// The websocket connection.
@@ -53,8 +55,8 @@ type wsconnection struct {
 	//The redis pubsubs channel
 	// Buffered channel of outbound messages.
 	//receive *redis.PubSub
-	send    chan ([]byte)
-	active  bool
+	send   chan ([]byte)
+	active bool
 }
 
 type redisclients struct {
@@ -67,11 +69,11 @@ type WsMessage struct {
 }
 
 type NotifyData struct {
-	ClientId  string
-	Message string
+	ClientId string
+	Message  string
 }
 
-func (conn  *wsconnection) Close() {
+func (conn *wsconnection) Close() {
 	conn.write(websocket.CloseMessage, []byte{})
 	conn.ws.Close()
 }
@@ -85,17 +87,17 @@ func (conn *wsconnection) sendMessages() {
 		conn.active = false
 		logs.Println("Closing websocket connection for ", conn.clientId)
 		conn.Close()
-		logs.Println("Removing subscription to redis channel for ",conn.clientId)
+		logs.Println("Removing subscription to redis channel for ", conn.clientId)
 		receiver.Unsubscribe(conn.clientId)
 		logs.Println("Exiting sendMessages. Removing the connection mapped to " + conn.clientId)
-  		delete(clientConnections, conn.clientId)
+		delete(clientConnections, conn.clientId)
 	}()
-	
+
 	for {
 		select {
 		case message, ok := <-conn.send:
 			if !ok {
-                log.Println("No more messages to be sent to WS connection from channel for  ", conn.clientId)
+				log.Println("No more messages to be sent to WS connection from channel for  ", conn.clientId)
 				return
 			}
 			logs.Println("Sending WS message for client  " + clientId)
@@ -115,18 +117,18 @@ func (conn *wsconnection) sendMessages() {
 }
 
 func (conn *wsconnection) receiveMessages() {
-	
-	go func () {
-		    for {
-		        if _, _, err := conn.ws.NextReader(); err != nil {
-		            log.Println("Error while receiving WS pong message  ", conn.clientId, err)
-					conn.active=false
-					conn.Close()
-		            break
-		        }
-		    }
-		}()
-		
+
+	go func() {
+		for {
+			if _, _, err := conn.ws.NextReader(); err != nil {
+				log.Println("Error while receiving WS pong message  ", conn.clientId, err)
+				conn.active = false
+				conn.Close()
+				break
+			}
+		}
+	}()
+
 	conn.ws.SetReadLimit(maxMessageSize)
 	conn.ws.SetReadDeadline(time.Now().Add(pongWait))
 	conn.ws.SetPongHandler(func(string) error {
@@ -142,22 +144,15 @@ func (conn *wsconnection) write(messageType int, payload []byte) error {
 	return conn.ws.WriteMessage(messageType, payload)
 }
 
-func InitServer(httpHost string, httpPort int , redisConf * redis.Options) error {
-	
-	logs.Println("Initiating Websocket server with redis pub-sub")
-	
-	r := mux.NewRouter().StrictSlash(true)
-	r.HandleFunc("/ws/{clientid}", serveWs).Methods("GET")
-	r.HandleFunc("/notify/{clientid}", serveNotify).Methods("POST")
-
-    redisSender = make(chan *NotifyData, redisConf.PoolSize)
+func InitPubSub(redisConf *redis.Options) error {
+	redisSender = make(chan *NotifyData, redisConf.PoolSize)
 	receiver = redis.NewClient(redisConf).PubSub()
 
 	var publisher = redis.NewClient(redisConf)
 
 	logs.Println("Initialized redis clients for pub and sub.")
 	
-	//Init Redis receiver 
+	//Init Redis receiver
 	go func() {
 		for {
 			var msgi, err = receiver.Receive()
@@ -165,55 +160,77 @@ func InitServer(httpHost string, httpPort int , redisConf * redis.Options) error
 				log.Println("Error while receive message from redis pubsub receiver", err)
 				//Todo handle failure
 			} else {
-				
+
 				switch msg := msgi.(type) {
-			    case *redis.Subscription:
-			        logs.Println("Messge from channel : ",msg.Kind, msg.Channel)
-			    case *redis.Message:
-					logs.Println("Received message from Redis channel ", msg.Payload,msg.Channel)
-				    go func (clientId string, message string) {
-						
+				case *redis.Subscription:
+					logs.Println("Messge from channel : ", msg.Kind, msg.Channel)
+				case *redis.Message:
+					logs.Println("Received message from Redis channel ", msg.Payload, msg.Channel)
+					go func(clientId string, message string) {
+
 						logs.Println("Sending the message to WS send channel ", message, clientId)
 						clientConnections[clientId].send <- []byte(message)
-					}(msg.Channel,msg.Payload)
-				    
-			    case *redis.Pong:
-			        logs.Println("Pong message from channel : ",msg)
-			    default:
-			        log.Printf("Error unknown message: %#v", msgi)
-			    }
-	
-				
+					}(msg.Channel, msg.Payload)
+
+				case *redis.Pong:
+					logs.Println("Pong message from channel : ", msg)
+				default:
+					log.Printf("Error unknown message: %#v", msgi)
+				}
+
 			}
 
 		}
 
 	}()
-	
+
 	go func() {
 		for {
 			data := <-redisSender
-			logs.Println("Received notification data from redisSender " ,data.ClientId)
-			go func () {
-				logs.Println("Publishing message to the channel  ", data.Message,data.ClientId)
+			logs.Println("Received notification data from redisSender ", data.ClientId)
+			go func() {
+				logs.Println("Publishing message to the channel  ", data.Message, data.ClientId)
 				err := publisher.Publish(data.ClientId, data.Message).Err()
 				if err != nil {
 					log.Println("Error in publishing event to redis", err)
 				}
 			}()
- 			
-			
-		}
-		
-	}()
 
-	logs.Println("Initializing web server for websocket and rest requests.")
-	return http.ListenAndServe(httpHost+":"+strconv.Itoa(httpPort), r)
+		}
+
+	}()
+	return nil
 }
+
+
+
+func ServeApns(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	deviceToken := vars["devicetoken"]
+
+	//extract body
+
+	decoder := json.NewDecoder(r.Body)
+	var data apns.ApnsMessage
+	err := decoder.Decode(&data)
+
+	if err != nil {
+		log.Println("Error while extracting the apns message.", err)
+		w.WriteHeader(http.StatusInternalServerError)
+
+	} else {
+	// send data to conn
+		logs.Println("Handling apns:  The extracted message is : ", data.Message,data.Badge,data.Sound)
+	    apns.Notify(&data,deviceToken)
+		w.WriteHeader(http.StatusOK)
+	}
+	
+}
+
 
 //serveNotify receives the API, parses the body and sends the message to the corresponding
 // websocket. Returns error if no websocket conn exists for a client id or send fails
-func serveNotify(w http.ResponseWriter, r *http.Request) {
+func ServeNotify(w http.ResponseWriter, r *http.Request) {
 
 	vars := mux.Vars(r)
 	clientId := vars["clientid"]
@@ -230,12 +247,12 @@ func serveNotify(w http.ResponseWriter, r *http.Request) {
 
 	} else {
 		// send data to conn
-		logs.Println("Handling notify:  The extracted message is : " , data.Message, clientId)
-		notifyData := &NotifyData {
+		logs.Println("Handling notify:  The extracted message is : ", data.Message, clientId)
+		notifyData := &NotifyData{
 			ClientId: clientId,
-			Message : data.Message, 
+			Message:  data.Message,
 		}
-		logs.Println("Handling notify:  Sending notification data to redisSender " ,clientId)
+		logs.Println("Handling notify:  Sending notification data to redisSender ", clientId)
 		redisSender <- notifyData
 		w.WriteHeader(http.StatusOK)
 	}
@@ -243,7 +260,7 @@ func serveNotify(w http.ResponseWriter, r *http.Request) {
 }
 
 // serverWs handles websocket requests from the peer.
-func serveWs(w http.ResponseWriter, r *http.Request) {
+func ServeWs(w http.ResponseWriter, r *http.Request) {
 
 	ws, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
