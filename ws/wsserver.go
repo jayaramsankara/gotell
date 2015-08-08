@@ -158,7 +158,15 @@ func InitPubSub(redisConf *redis.Options) error {
 			var msgi, err = receiver.Receive()
 			if err != nil {
 				log.Println("Error while receive message from redis pubsub receiver", err)
-				//Todo handle failure
+				// handle failure.. reinit redis pub sub
+				log.Println("Reinitializing Redis PubSub.. and exiting the receive handler routine")
+				close(redisSender)
+				receiver.Close()
+				publisher.Close()
+				InitPubSub(redisConf)
+				return
+				
+				
 			} else {
 
 				switch msg := msgi.(type) {
@@ -184,9 +192,13 @@ func InitPubSub(redisConf *redis.Options) error {
 
 	}()
 
-	go func() {
+	go func(msgsForRedis chan *NotifyData) {
 		for {
-			data := <-redisSender
+			data, ok := <-msgsForRedis
+			if !ok {
+				log.Println("RedisSender channel seems to be closed. Exiting the routine")
+				return
+			}
 			logs.Println("Received notification data from redisSender ", data.ClientId)
 			go func() {
 				logs.Println("Publishing message to the channel  ", data.Message, data.ClientId)
@@ -198,7 +210,7 @@ func InitPubSub(redisConf *redis.Options) error {
 
 		}
 
-	}()
+	}(redisSender)
 	return nil
 }
 
