@@ -1,6 +1,9 @@
 package apns
 
-import "github.com/anachronistic/apns"
+import (
+	"github.com/anachronistic/apns"
+	"os"
+)
 
 var apnsClient * apns.Client
 
@@ -11,7 +14,9 @@ type ApnsMessage struct {
 }
 
 func init() {
-	apnsClient = apns.NewClient("gateway.sandbox.push.apple.com:2195", "YOUR_CERT_PEM", "YOUR_KEY_NOENC_PEM")
+	var apnsCertFile = os.Getenv("APNS_CERT")
+	var apnsKeyfile = os.Getenv("APNS_KEY")
+	apnsClient = apns.NewClient("gateway.sandbox.push.apple.com:2195", apnsCertFile, apnsKeyfile)
 }
 func Notify(message * ApnsMessage, deviceToken string) {
 	payload := apns.NewPayload()
