@@ -15,6 +15,9 @@ gotell uses redis pub-sub in order to perform a stateless way of websocket notif
   * { "message": "Hello from me"}
   * { "messages": "{\"msg\":\"Hello from User1\"}"} 
 * APNS support
+ * Requires app cert and unencrupted key pem files.
+ 
+
 ## To Do
 * GCM support
 
