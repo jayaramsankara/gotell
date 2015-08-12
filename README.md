@@ -14,10 +14,8 @@ gotell uses redis pub-sub in order to perform a stateless way of websocket notif
  * Examples: 
   * { "message": "Hello from me"}
   * { "messages": "{\"msg\":\"Hello from User1\"}"} 
-
-## To Do
-* Support for generic JSON structure as message's Value
 * APNS support
+## To Do
 * GCM support
 
 
