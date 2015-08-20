@@ -32,10 +32,22 @@ gotell uses redis pub-sub in order to perform a stateless way of websocket notif
 Re-Requisite: Install Go 
 
 * cd to GOPATH
-* Run the command 'go get github.com/jayaramsankara/gotell/ws'
-* Add the statement import "github.com/jayaramsankara/gotell/ws" in your .go file
+* Run the command 'go get github.com/jayaramsankara/gotell'
+* Add the statement 'import "github.com/jayaramsankara/gotell"' in your main go file
+* Initiate the notification server by invoking gotell.InitServer with appropriate params
 
-## Example CloudFoundry Application
+### Example
+// Start the web socket server and wait in a loop
+
+	err := gotell.InitServer(httpHost, httpPort, redisOptions)
+	
+	if err != nil {
+	
+		log.Println("Failed to initiate websocket server.", err)
+		
+	}
+
+## Example CloudFoundry Application 
 TODO
 
 
