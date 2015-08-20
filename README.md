@@ -43,7 +43,7 @@ Re-Requisite: Install Go
 	
 	if err != nil {
 	
-		log.Println("Failed to initiate websocket server.", err)
+		log.Println("Failed to initiate notification service.", err)
 		
 	}
 
