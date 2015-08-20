@@ -16,7 +16,7 @@ gotell uses redis pub-sub in order to perform a stateless way of websocket notif
   * { "messages": "{\"msg\":\"Hello from User1\"}"} 
 * APNS support
  * Requires app cert and unencrypted key pem files.
- * Do http POST https://<gotellURL>/apns/<devicetoken>  with header Content-Type : application/json and body as   '{"message":"Message Value","badge":0,"sound":"default"}'
+ * Do http POST https://\<gotellURL\>/apns/\<devicetoken\>  with header Content-Type : application/json and body as   '{"message":"Message Value","badge":0,"sound":"default"}'
   * devicetoken should be the device token of the device to which the notification has to be sent.
   * Message Value can be another JSON,but enclosed with in double quotes (as with string) and the doublequotes that are part of the value should be escaped (replace " with \" ).
   * The badge  value has to be an integer and badge count set will be displayed in the app icon
