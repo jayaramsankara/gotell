@@ -2,7 +2,7 @@ package gotell
 
 import (
 	"github.com/gorilla/mux"
-	"gopkg.in/redis.v3"
+	"gopkg.in/redis.v5"
 	"log"
 	"net/http"
 	"strconv"
@@ -24,7 +24,7 @@ func InitServer(httpHost string, httpPort int, redisConf *redis.Options) error {
     if err != nil {
      	log.Fatalln("Failed to initialize pubsub for websocket notification service")
 	}
-	
+
 
 	logs.Println("Initializing web server for websocket and rest requests.")
 	return http.ListenAndServe(httpHost+":"+strconv.Itoa(httpPort), r)

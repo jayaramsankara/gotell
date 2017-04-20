@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
-	"gopkg.in/redis.v3"
+	"gopkg.in/redis.v5"
 	"log"
 	"net/http"
 	"os"
@@ -146,12 +146,12 @@ func (conn *wsconnection) write(messageType int, payload []byte) error {
 
 func InitPubSub(redisConf *redis.Options) error {
 	redisSender = make(chan *NotifyData, redisConf.PoolSize)
-	receiver = redis.NewClient(redisConf).PubSub()
+	receiver, _ = redis.NewClient(redisConf).Subscribe()
 
 	var publisher = redis.NewClient(redisConf)
 
 	logs.Println("Initialized redis clients for pub and sub.")
-	
+
 	//Init Redis receiver
 	go func() {
 		for {
@@ -165,8 +165,8 @@ func InitPubSub(redisConf *redis.Options) error {
 				publisher.Close()
 				InitPubSub(redisConf)
 				return
-				
-				
+
+
 			} else {
 
 				switch msg := msgi.(type) {
@@ -236,7 +236,7 @@ func ServeApns(w http.ResponseWriter, r *http.Request) {
 	    apns.Notify(&data,deviceToken)
 		w.WriteHeader(http.StatusOK)
 	}
-	
+
 }
 
 
