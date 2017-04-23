@@ -37,7 +37,7 @@ var upgrader = websocket.Upgrader{
 	CheckOrigin:     func(r *http.Request) bool { return true },
 }
 
-var clientConnections = map[string]*wsconnection{}
+var clientConnections = map[string][]*wsconnection{}
 
 var redisSender chan *NotifyData
 
@@ -177,7 +177,11 @@ func InitPubSub(redisConf *redis.Options) error {
 					go func(clientId string, message string) {
 
 						logs.Println("Sending the message to WS send channel ", message, clientId)
-						clientConnections[clientId].send <- []byte(message)
+						connections := clientConnections[clientId]
+						for cnt := range connections {
+							connections[cnt].send <- []byte(message)
+						}
+						
 					}(msg.Channel, msg.Payload)
 
 				case *redis.Pong:
@@ -297,7 +301,10 @@ func ServeWs(w http.ResponseWriter, r *http.Request) {
 
 	conn := &wsconnection{active: true, clientId: clientId, ws: ws, send: make(chan []byte, 256)}
 	logs.Println("Adding clientId-WsConn mapping for client  " + clientId)
-	clientConnections[clientId] = conn
+	currentConnections := clientConnections[clientId]
+	modifiedConnections := append(currentConnections,conn)
+	
+	clientConnections[clientId] = modifiedConnections
 	go conn.sendMessages()
 	conn.receiveMessages()
 }
