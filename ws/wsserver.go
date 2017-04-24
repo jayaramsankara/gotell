@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"time"
+	"github.com/satori/go.uuid"
 )
 
 const (
@@ -51,7 +52,7 @@ type wsconnection struct {
 	// The websocket connection.
 	ws       *websocket.Conn
 	clientId string
-
+    id  string
 	//The redis pubsubs channel
 	// Buffered channel of outbound messages.
 	//receive *redis.PubSub
@@ -78,22 +79,28 @@ func (conn *wsconnection) Close() {
 	conn.ws.Close()
 }
 
+func (conn *wsconnection) String() (string) {
+	return conn.clientId+" : "+conn.id
+}
+
+
+
 func (conn *wsconnection) sendMessages() {
 	clientId := conn.clientId
 	ticker := time.NewTicker(pingPeriod)
 	defer func() {
 		ticker.Stop()
-		logs.Println("Exiting sendMessages. Removing the connection mapped to " + conn.clientId)
+		logs.Println("Exiting sendMessages for client  : " + conn.String())
 		conn.active = false
-		logs.Println("Closing websocket connection for ", conn.clientId)
+		logs.Println("Closing websocket connection for ", conn.String())
 		conn.Close()
 		
 		currentConnections := clientConnections[clientId]
 		if len(currentConnections) == 1 {
-			logs.Println("Removing subscription to redis channel for ", conn.clientId)
+			logs.Println("Removing subscription to redis channel for ", conn.String())
 			receiver.Unsubscribe(conn.clientId)
 		}
-		logs.Println("Exiting sendMessages. Removing the connection mapped to " + conn.clientId)
+		logs.Println("Exiting sendMessages. Removing the connection mapped to " + conn.String())
 		delete(clientConnections, conn.clientId)
 	}()
 
@@ -101,18 +108,18 @@ func (conn *wsconnection) sendMessages() {
 		select {
 		case message, ok := <-conn.send:
 			if !ok {
-				log.Println("No more messages to be sent to WS connection from channel for  ", conn.clientId)
+				log.Println("No more messages to be sent to WS connection from channel for  ", conn.String())
 				return
 			}
 			logs.Println("Sending WS message for client  " + clientId)
 			if err := conn.write(websocket.TextMessage, message); err != nil {
-				log.Println("Error while sending WS message  ", conn.clientId, message, err)
+				log.Println("Error while sending WS message  ", conn.String(), message, err)
 				return
 			}
 		case <-ticker.C:
 			logs.Println("Sending Ping WS message for client  " + clientId)
 			if err := conn.write(websocket.PingMessage, []byte{}); err != nil {
-				log.Println("Error while sending WS ping message  ", conn.clientId, err)
+				log.Println("Error while sending WS ping message  ", conn.String(), err)
 				return
 			}
 		}
@@ -125,7 +132,7 @@ func (conn *wsconnection) receiveMessages() {
 	go func() {
 		for {
 			if _, _, err := conn.ws.NextReader(); err != nil {
-				log.Println("Error while receiving WS pong message  ", conn.clientId, err)
+				log.Println("Error while receiving WS pong message  ", conn.String(), err)
 				conn.active = false
 				conn.Close()
 				break
@@ -136,7 +143,7 @@ func (conn *wsconnection) receiveMessages() {
 	conn.ws.SetReadLimit(maxMessageSize)
 	conn.ws.SetReadDeadline(time.Now().Add(pongWait))
 	conn.ws.SetPongHandler(func(string) error {
-		logs.Println("PongHandler for client  " + conn.clientId)
+		logs.Println("PongHandler for client  " + conn.String())
 		conn.ws.SetReadDeadline(time.Now().Add(pongWait))
 		return nil
 	})
@@ -304,7 +311,7 @@ func ServeWs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	conn := &wsconnection{active: true, clientId: clientId, ws: ws, send: make(chan []byte, 256)}
+	conn := &wsconnection{active: true, clientId: clientId, id: newUUID() , ws: ws, send: make(chan []byte, 256)}
 	logs.Println("Adding clientId-WsConn mapping for client  " + clientId)
 
 	modifiedConnections := append(currentConnections, conn)
@@ -312,4 +319,10 @@ func ServeWs(w http.ResponseWriter, r *http.Request) {
 	clientConnections[clientId] = modifiedConnections
 	go conn.sendMessages()
 	conn.receiveMessages()
+}
+
+func newUUID() (string) {
+	
+	u1 := uuid.NewV4()
+	return u1.String()
 }
