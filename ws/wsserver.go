@@ -111,13 +111,13 @@ func (conn *wsconnection) sendMessages() {
 				log.Println("No more messages to be sent to WS connection from channel for  ", conn.String())
 				return
 			}
-			logs.Println("Sending WS message for client  " + clientId)
+			logs.Println("Sending WS message for client  " + conn.String())
 			if err := conn.write(websocket.TextMessage, message); err != nil {
 				log.Println("Error while sending WS message  ", conn.String(), message, err)
 				return
 			}
 		case <-ticker.C:
-			logs.Println("Sending Ping WS message for client  " + clientId)
+			logs.Println("Sending Ping WS message for client  " + conn.String())
 			if err := conn.write(websocket.PingMessage, []byte{}); err != nil {
 				log.Println("Error while sending WS ping message  ", conn.String(), err)
 				return
@@ -181,9 +181,9 @@ func InitPubSub(redisConf *redis.Options) error {
 
 				switch msg := msgi.(type) {
 				case *redis.Subscription:
-					logs.Println("Messge from channel : ", msg.Kind, msg.Channel)
+					logs.Println("Received messagefrom Redis ", msg.Kind, msg.Channel)
 				case *redis.Message:
-					logs.Println("Received message from Redis channel ", msg.Payload, msg.Channel)
+					logs.Println("Received message from Redis ", msg.Payload, msg.Channel)
 					go func(clientId string, message string) {
 
 						logs.Println("Sending the message to WS send channel ", message, clientId)
@@ -195,9 +195,9 @@ func InitPubSub(redisConf *redis.Options) error {
 					}(msg.Channel, msg.Payload)
 
 				case *redis.Pong:
-					logs.Println("Pong message from channel : ", msg)
+					logs.Println("Pong message from Redis : ", msg)
 				default:
-					log.Printf("Error unknown message: %#v", msgi)
+					log.Printf("Error unknown message from Redis : %#v", msgi)
 				}
 
 			}
@@ -213,9 +213,9 @@ func InitPubSub(redisConf *redis.Options) error {
 				log.Println("RedisSender channel seems to be closed. Exiting the routine")
 				return
 			}
-			logs.Println("Received notification data from redisSender ", data.ClientId)
+			logs.Println("Received notification data from redisSender. ", data.ClientId)
 			go func() {
-				logs.Println("Publishing message to the channel  ", data.Message, data.ClientId)
+				logs.Println("Publishing message to the Redis ", data.Message, data.ClientId)
 				err := publisher.Publish(data.ClientId, data.Message).Err()
 				if err != nil {
 					log.Println("Error in publishing event to redis", err)
