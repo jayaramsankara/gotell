@@ -5,12 +5,12 @@ import (
 	"encoding/json"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
+	"github.com/jayaramsankara/gotell/apns"
 	"gopkg.in/redis.v5"
 	"log"
 	"net/http"
 	"os"
 	"time"
-	"github.com/jayaramsankara/gotell/apns"
 )
 
 const (
@@ -87,8 +87,12 @@ func (conn *wsconnection) sendMessages() {
 		conn.active = false
 		logs.Println("Closing websocket connection for ", conn.clientId)
 		conn.Close()
-		logs.Println("Removing subscription to redis channel for ", conn.clientId)
-		receiver.Unsubscribe(conn.clientId)
+		
+		currentConnections := clientConnections[clientId]
+		if len(currentConnections) == 1 {
+			logs.Println("Removing subscription to redis channel for ", conn.clientId)
+			receiver.Unsubscribe(conn.clientId)
+		}
 		logs.Println("Exiting sendMessages. Removing the connection mapped to " + conn.clientId)
 		delete(clientConnections, conn.clientId)
 	}()
@@ -166,7 +170,6 @@ func InitPubSub(redisConf *redis.Options) error {
 				InitPubSub(redisConf)
 				return
 
-
 			} else {
 
 				switch msg := msgi.(type) {
@@ -181,7 +184,7 @@ func InitPubSub(redisConf *redis.Options) error {
 						for cnt := range connections {
 							connections[cnt].send <- []byte(message)
 						}
-						
+
 					}(msg.Channel, msg.Payload)
 
 				case *redis.Pong:
@@ -218,8 +221,6 @@ func InitPubSub(redisConf *redis.Options) error {
 	return nil
 }
 
-
-
 func ServeApns(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	deviceToken := vars["devicetoken"]
@@ -235,14 +236,13 @@ func ServeApns(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 
 	} else {
-	// send data to conn
-		logs.Println("Handling apns:  The extracted message is : ", data.Message,data.Badge,data.Sound)
-	    apns.Notify(&data,deviceToken)
+		// send data to conn
+		logs.Println("Handling apns:  The extracted message is : ", data.Message, data.Badge, data.Sound)
+		apns.Notify(&data, deviceToken)
 		w.WriteHeader(http.StatusOK)
 	}
 
 }
-
 
 //serveNotify receives the API, parses the body and sends the message to the corresponding
 // websocket. Returns error if no websocket conn exists for a client id or send fails
@@ -288,22 +288,27 @@ func ServeWs(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	clientId := vars["clientid"]
 	logs.Println("Creating new wsconnection for client : " + clientId)
-	// Initialize redis client as subscriber
 
-	err = receiver.Subscribe(clientId)
-	if err != nil {
-		errMsg := "Failed to subscribe to message channel for " + clientId
-		log.Println(errMsg, err)
-		ws.WriteMessage(websocket.CloseInternalServerErr, []byte(errMsg))
-		ws.Close()
-		return
+	currentConnections := clientConnections[clientId]
+	//Subscribe for a client only for the first connection.
+	if len(currentConnections) == 0 {
+		// Initialize redis client as subscriber
+
+		err = receiver.Subscribe(clientId)
+		if err != nil {
+			errMsg := "Failed to subscribe to message channel for " + clientId
+			log.Println(errMsg, err)
+			ws.WriteMessage(websocket.CloseInternalServerErr, []byte(errMsg))
+			ws.Close()
+			return
+		}
 	}
 
 	conn := &wsconnection{active: true, clientId: clientId, ws: ws, send: make(chan []byte, 256)}
 	logs.Println("Adding clientId-WsConn mapping for client  " + clientId)
-	currentConnections := clientConnections[clientId]
-	modifiedConnections := append(currentConnections,conn)
-	
+
+	modifiedConnections := append(currentConnections, conn)
+
 	clientConnections[clientId] = modifiedConnections
 	go conn.sendMessages()
 	conn.receiveMessages()
