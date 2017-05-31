@@ -86,6 +86,7 @@ func (conn *wsconnection) String() (string) {
 
 
 func (conn *wsconnection) sendMessages() {
+	logs.Println("Initing sendMessages for client  " + conn.String())
 	clientId := conn.clientId
 	ticker := time.NewTicker(pingPeriod)
 	defer func() {
@@ -128,7 +129,7 @@ func (conn *wsconnection) sendMessages() {
 }
 
 func (conn *wsconnection) receiveMessages() {
-
+	logs.Println("Initing receiveMessages for client  " + conn.String())
 	go func() {
 		for {
 			if _, _, err := conn.ws.NextReader(); err != nil {
@@ -312,7 +313,7 @@ func ServeWs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	conn := &wsconnection{active: true, clientId: clientId, id: newUUID() , ws: ws, send: make(chan []byte, 256)}
-	logs.Println("Adding clientId-WsConn mapping for client  " + clientId)
+	logs.Println("Adding clientId-WsConn mapping for client  " + conn.String())
 
 	modifiedConnections := append(currentConnections, conn)
 
