@@ -12,6 +12,7 @@ import (
 	"os"
 	"time"
 	"github.com/satori/go.uuid"
+	"strconv"
 )
 
 const (
@@ -316,8 +317,10 @@ func ServeWs(w http.ResponseWriter, r *http.Request) {
 	logs.Println("Adding clientId-WsConn mapping for client  " + conn.String())
 
 	modifiedConnections := append(currentConnections, conn)
+	logs.Println("# connections for  client after appending the new one " + strconv.Itoa(len(modifiedConnections)))
 
 	clientConnections[clientId] = modifiedConnections
+	logs.Println("#  updated connections for  client  " + strconv.Itoa(len(clientConnections[clientId])))
 	go conn.sendMessages()
 	conn.receiveMessages()
 }
