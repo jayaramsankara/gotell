@@ -186,7 +186,7 @@ func InitPubSub(redisConf *redis.Options) error {
 				case *redis.Message:
 					logs.Println("Received message from Redis ", msg.Payload, msg.Channel)
 					go func(clientId string, message string) {
-
+						logs.Println("Attempting to send the message to WS  connections for client ", message, clientId)
 						connections := clientConnections[clientId]
 						for cnt := range connections {
 							logs.Println("Sending the message to WS  client  ", message, connections[cnt].String())
