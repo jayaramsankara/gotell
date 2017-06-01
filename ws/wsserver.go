@@ -102,8 +102,15 @@ func (conn *wsconnection) sendMessages() {
 			logs.Println("Removing subscription to redis channel for ", conn.String())
 			receiver.Unsubscribe(conn.clientId)
 		}
-		logs.Println("Exiting sendMessages. Removing the connection mapped to " + conn.String())
-		delete(clientConnections, conn.clientId)
+		logs.Println("Removing the connection mapped to " + conn.String())
+		newConnections := currentConnections[:0]
+		for _, ec := range currentConnections {
+			if ec.id != conn.id {
+				newConnections = append(newConnections, ec)
+			}
+		}
+		clientConnections[clientId]=newConnections
+		logs.Println("Exiting sendMessages. Current # conenctions for client " + clientId+" is "+strconv.Itoa(len(clientConnections[clientId])))
 	}()
 
 	for {
