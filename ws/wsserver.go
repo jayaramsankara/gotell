@@ -296,7 +296,7 @@ func ServeNotify(w http.ResponseWriter, r *http.Request) {
 		currentConnections := clientConnections[clientId]
 		
 		notifyResponse := NotifyResponse{
-			Status : (len(currentConnections) > 1),
+			Status : (len(currentConnections) > 0 ),
 		    ClientId: clientId,
 		}
 		w.Header().Set("Content-Type", "application/json")
