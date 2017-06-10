@@ -75,6 +75,12 @@ type NotifyData struct {
 	Message  string
 }
 
+type NotifyResponse struct {
+	Status bool `json:"status"`
+	ClientId string `json:"clientId"`
+	
+}
+
 func (conn *wsconnection) Close() {
 	conn.write(websocket.CloseMessage, []byte{})
 	conn.ws.Close()
@@ -286,7 +292,17 @@ func ServeNotify(w http.ResponseWriter, r *http.Request) {
 		}
 		logs.Println("Handling notify:  Sending notification data to redisSender ", clientId)
 		redisSender <- notifyData
-		w.WriteHeader(http.StatusOK)
+		notifyResponse := NotifyResponse{
+			Status : true,
+		    ClientId: clientId,
+		}
+		w.Header().Set("Content-Type", "application/json")
+		err = json.NewEncoder(w).Encode(notifyResponse)
+		if(err != nil) {
+			log.Println("Error writing the response.", err)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+		
 	}
 
 }
