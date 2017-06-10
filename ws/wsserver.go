@@ -292,8 +292,11 @@ func ServeNotify(w http.ResponseWriter, r *http.Request) {
 		}
 		logs.Println("Handling notify:  Sending notification data to redisSender ", clientId)
 		redisSender <- notifyData
+		//Check whether clientId is connected.
+		currentConnections := clientConnections[clientId]
+		
 		notifyResponse := NotifyResponse{
-			Status : true,
+			Status : (len(currentConnections) > 1),
 		    ClientId: clientId,
 		}
 		w.Header().Set("Content-Type", "application/json")
