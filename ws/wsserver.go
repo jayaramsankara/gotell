@@ -6,13 +6,13 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
 	"github.com/jayaramsankara/gotell/apns"
+	"github.com/satori/go.uuid"
 	"gopkg.in/redis.v5"
 	"log"
 	"net/http"
 	"os"
-	"time"
-	"github.com/satori/go.uuid"
 	"strconv"
+	"time"
 )
 
 const (
@@ -53,7 +53,7 @@ type wsconnection struct {
 	// The websocket connection.
 	ws       *websocket.Conn
 	clientId string
-    id  string
+	id       string
 	//The redis pubsubs channel
 	// Buffered channel of outbound messages.
 	//receive *redis.PubSub
@@ -76,9 +76,8 @@ type NotifyData struct {
 }
 
 type NotifyResponse struct {
-	Status bool `json:"status"`
+	Status   bool   `json:"status"`
 	ClientId string `json:"clientId"`
-	
 }
 
 func (conn *wsconnection) Close() {
@@ -86,11 +85,9 @@ func (conn *wsconnection) Close() {
 	conn.ws.Close()
 }
 
-func (conn *wsconnection) String() (string) {
-	return conn.clientId+" : "+conn.id
+func (conn *wsconnection) String() string {
+	return conn.clientId + " : " + conn.id
 }
-
-
 
 func (conn *wsconnection) sendMessages() {
 	logs.Println("Initing sendMessages for client  " + conn.String())
@@ -102,7 +99,7 @@ func (conn *wsconnection) sendMessages() {
 		conn.active = false
 		logs.Println("Closing websocket connection for ", conn.String())
 		conn.Close()
-		
+
 		currentConnections := clientConnections[clientId]
 		if len(currentConnections) == 1 {
 			logs.Println("Removing subscription to redis channel for ", conn.String())
@@ -115,8 +112,8 @@ func (conn *wsconnection) sendMessages() {
 				newConnections = append(newConnections, ec)
 			}
 		}
-		clientConnections[clientId]=newConnections
-		logs.Println("Exiting sendMessages. Current # conenctions for client " + clientId+" is "+strconv.Itoa(len(clientConnections[clientId])))
+		clientConnections[clientId] = newConnections
+		logs.Println("Exiting sendMessages. Current # conenctions for client " + clientId + " is " + strconv.Itoa(len(clientConnections[clientId])))
 	}()
 
 	for {
@@ -266,6 +263,12 @@ func ServeApns(w http.ResponseWriter, r *http.Request) {
 
 }
 
+func ServeNotifyCORS(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "POST")
+	w.WriteHeader(http.StatusOK)
+}
+
 //serveNotify receives the API, parses the body and sends the message to the corresponding
 // websocket. Returns error if no websocket conn exists for a client id or send fails
 func ServeNotify(w http.ResponseWriter, r *http.Request) {
@@ -294,18 +297,18 @@ func ServeNotify(w http.ResponseWriter, r *http.Request) {
 		redisSender <- notifyData
 		//Check whether clientId is connected.
 		currentConnections := clientConnections[clientId]
-		
+
 		notifyResponse := NotifyResponse{
-			Status : (len(currentConnections) > 0 ),
-		    ClientId: clientId,
+			Status:   (len(currentConnections) > 0),
+			ClientId: clientId,
 		}
 		w.Header().Set("Content-Type", "application/json")
 		err = json.NewEncoder(w).Encode(notifyResponse)
-		if(err != nil) {
+		if err != nil {
 			log.Println("Error writing the response.", err)
 			w.WriteHeader(http.StatusInternalServerError)
 		}
-		
+
 	}
 
 }
@@ -339,7 +342,7 @@ func ServeWs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	conn := &wsconnection{active: true, clientId: clientId, id: newUUID() , ws: ws, send: make(chan []byte, 256)}
+	conn := &wsconnection{active: true, clientId: clientId, id: newUUID(), ws: ws, send: make(chan []byte, 256)}
 	logs.Println("Adding clientId-WsConn mapping for client  " + conn.String())
 
 	modifiedConnections := append(currentConnections, conn)
@@ -351,8 +354,8 @@ func ServeWs(w http.ResponseWriter, r *http.Request) {
 	conn.receiveMessages()
 }
 
-func newUUID() (string) {
-	
+func newUUID() string {
+
 	u1 := uuid.NewV4()
 	return u1.String()
 }

@@ -17,6 +17,7 @@ func InitServer(httpHost string, httpPort int, redisConf *redis.Options) error {
 	r := mux.NewRouter().StrictSlash(true)
 	r.HandleFunc("/ws/{clientid}", ws.ServeWs).Methods("GET")
 	r.HandleFunc("/notify/{clientid}", ws.ServeNotify).Methods("POST")
+	r.HandleFunc("/notify/{clientid}", ws.ServeNotifyCORS).Methods("OPTIONS")
 	r.HandleFunc("/apns/{devicetoken}", ws.ServeApns).Methods("POST")
 
     logs.Println("Initializing redis pub-sub for websocket message notification")
