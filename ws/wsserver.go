@@ -264,8 +264,12 @@ func ServeApns(w http.ResponseWriter, r *http.Request) {
 }
 
 func ServeNotifyCORS(w http.ResponseWriter, r *http.Request) {
+	 var headers = r.Header.Get("Access-Control-Request-Headers")
+	
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "POST")
+	
+	w.Header().Set("Access-Control-Allow-Headers",headers)
 	w.WriteHeader(http.StatusOK)
 }
 
