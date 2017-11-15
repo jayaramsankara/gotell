@@ -307,6 +307,7 @@ func ServeNotify(w http.ResponseWriter, r *http.Request) {
 			ClientId: clientId,
 		}
 		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Access-Control-Allow-Origin", "*")
 		err = json.NewEncoder(w).Encode(notifyResponse)
 		if err != nil {
 			log.Println("Error writing the response.", err)
