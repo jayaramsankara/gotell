@@ -10,10 +10,10 @@ gotell uses redis pub-sub in order to perform a stateless way of websocket notif
 ## Functionalities
 * Push notification to websocket clients
  * Websocket clients can connect to wss://gotellURL/ws/'clientid' and then any other application can do a https post to gotellURL/notify/'clientid' with body as the JSON {"message":"Value"} and the 'Value' content will be delivered to the client.
- * The Value can be another JSON, but enclosed with in double quotes (as with string) and the doublequotes that are part of the value should be escaped (replace " with \" ).
+ * The Value can be another JSON, but enclosed with in double quotes (as with string) and the doublequotes that are part of the value should be escaped (replace " with \\" ).
  * Examples: 
    * { "message": "Hello from me"}
-    * { "message": "{\"msg\":\"Hello from User1\"}"} 
+    * { "message": "{\\"msg\\":\\"Hello from User1\\"}"} 
 * APNS support
  * Requires app cert and unencrypted key pem files.
    * The cert and key file name is read from the environment variable 'APNS_CERT' and 'APNS_KEY' respectively.
