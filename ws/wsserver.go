@@ -3,16 +3,17 @@ package ws
 
 import (
 	"encoding/json"
-	"github.com/gorilla/mux"
-	"github.com/gorilla/websocket"
-	"github.com/jayaramsankara/gotell/apns"
-	"github.com/satori/go.uuid"
-	"gopkg.in/redis.v5"
 	"log"
 	"net/http"
 	"os"
 	"strconv"
 	"time"
+
+	"github.com/gorilla/mux"
+	"github.com/gorilla/websocket"
+	"github.com/jayaramsankara/gotell/apns"
+	"github.com/satori/go.uuid"
+	"gopkg.in/redis.v5"
 )
 
 const (
@@ -39,8 +40,6 @@ var upgrader = websocket.Upgrader{
 	CheckOrigin:     func(r *http.Request) bool { return true },
 }
 
-var clientConnections = map[string][]*wsconnection{}
-
 var redisSender chan *NotifyData
 
 var receiver *redis.PubSub
@@ -48,6 +47,8 @@ var receiver *redis.PubSub
 var logs = log.New(os.Stdout, "INFO", log.LstdFlags)
 
 var Logs = logs
+
+var connMgr = initClientConnectionManager()
 
 type wsconnection struct {
 	// The websocket connection.
@@ -80,6 +81,134 @@ type NotifyResponse struct {
 	ClientId string `json:"clientId"`
 }
 
+type connCmd struct {
+	Cmd  int
+	Data interface{}
+}
+
+type newConnCmd struct {
+	clientID string
+	ws       *websocket.Conn
+}
+
+type connectionManager struct {
+	incoming chan<- []*wsconnection
+	outgoing <-chan []*wsconnection
+	command  chan connCmd
+}
+
+func (connm *connectionManager) connectionsFor(clientid string) []*wsconnection {
+	go func() {
+		connm.command <- connCmd{
+			Cmd:  0,
+			Data: clientid,
+		}
+	}()
+	return <-connm.outgoing
+
+}
+
+func (connm *connectionManager) cleanUpConnection(conn *wsconnection) {
+	go func() {
+		connm.command <- connCmd{
+			Cmd:  2,
+			Data: conn,
+		}
+	}()
+
+}
+
+func (connm *connectionManager) newConnectionFor(clientID string, ws *websocket.Conn) *wsconnection {
+	go func() {
+		connm.command <- connCmd{
+			Cmd: 1,
+			Data: newConnCmd{
+				clientID,
+				ws,
+			},
+		}
+	}()
+	newConns := <-connm.outgoing
+	return newConns[0]
+}
+
+func initClientConnectionManager() connectionManager {
+	var clientConnections = map[string][]*wsconnection{}
+
+	outchan := make(chan []*wsconnection)
+	cmdchan := make(chan connCmd)
+
+	go func() {
+		for {
+			select {
+			case chanCmd := <-cmdchan:
+				switch chanCmd.Cmd {
+				case 0:
+					clientID := chanCmd.Data.(string)
+					connections := clientConnections[clientID]
+					outchan <- connections
+				case 1:
+
+					data := chanCmd.Data.(newConnCmd)
+					clientID := data.clientID
+					ws := data.ws
+					currentConnections := clientConnections[clientID]
+					//Subscribe for a client only for the first connection.
+					if len(currentConnections) == 0 {
+						// Initialize redis client as subscriber
+
+						err := receiver.Subscribe(clientID)
+						if err != nil {
+							errMsg := "Failed to subscribe to message channel for " + clientID
+							log.Println(errMsg, err)
+							conn := &wsconnection{active: false, clientId: clientID, id: newUUID(), ws: ws, send: make(chan []byte, 256)}
+							outchan <- []*wsconnection{conn}
+							break
+						}
+					}
+
+					conn := &wsconnection{active: true, clientId: clientID, id: newUUID(), ws: ws, send: make(chan []byte, 256)}
+					logs.Println("Adding clientId-WsConn mapping for client  " + conn.String())
+
+					modifiedConnections := append(currentConnections, conn)
+					logs.Println("# connections for  client after appending the new one " + strconv.Itoa(len(modifiedConnections)))
+
+					clientConnections[clientID] = modifiedConnections
+					logs.Println("#  updated connections for  client  " + strconv.Itoa(len(modifiedConnections)))
+					outchan <- []*wsconnection{conn}
+
+				case 2:
+					conn := chanCmd.Data.(*wsconnection)
+					currentConnections := clientConnections[conn.clientId]
+					if len(currentConnections) == 1 {
+						logs.Println("Removing subscription to redis channel for ", conn.String())
+						receiver.Unsubscribe(conn.clientId)
+					}
+					logs.Println("Removing the connection mapped to " + conn.String())
+					newConnections := currentConnections[:0]
+					for _, ec := range currentConnections {
+						if ec.id != conn.id {
+							newConnections = append(newConnections, ec)
+						}
+					}
+					clientConnections[conn.clientId] = newConnections
+					logs.Println(" Current # conenctions for client " + conn.clientId + " is " + strconv.Itoa(len(newConnections)))
+
+				}
+			}
+		}
+	}()
+
+	// go func connectionMmgr(d int) (err) {
+
+	// }()
+
+	return connectionManager{
+		outgoing: outchan,
+		command:  cmdchan,
+	}
+}
+
 func (conn *wsconnection) Close() {
 	conn.write(websocket.CloseMessage, []byte{})
 	conn.ws.Close()
@@ -91,7 +220,6 @@ func (conn *wsconnection) String() string {
 
 func (conn *wsconnection) sendMessages() {
 	logs.Println("Initing sendMessages for client  " + conn.String())
-	clientId := conn.clientId
 	ticker := time.NewTicker(pingPeriod)
 	defer func() {
 		ticker.Stop()
@@ -99,21 +227,7 @@ func (conn *wsconnection) sendMessages() {
 		conn.active = false
 		logs.Println("Closing websocket connection for ", conn.String())
 		conn.Close()
-
-		currentConnections := clientConnections[clientId]
-		if len(currentConnections) == 1 {
-			logs.Println("Removing subscription to redis channel for ", conn.String())
-			receiver.Unsubscribe(conn.clientId)
-		}
-		logs.Println("Removing the connection mapped to " + conn.String())
-		newConnections := currentConnections[:0]
-		for _, ec := range currentConnections {
-			if ec.id != conn.id {
-				newConnections = append(newConnections, ec)
-			}
-		}
-		clientConnections[clientId] = newConnections
-		logs.Println("Exiting sendMessages. Current # conenctions for client " + clientId + " is " + strconv.Itoa(len(clientConnections[clientId])))
+		connMgr.cleanUpConnection(conn)
 	}()
 
 	for {
@@ -198,7 +312,7 @@ func InitPubSub(redisConf *redis.Options) error {
 					logs.Println("Received message from Redis ", msg.Payload, msg.Channel)
 					go func(clientId string, message string) {
 						logs.Println("Attempting to send the message to WS  connections for client ", message, clientId)
-						connections := clientConnections[clientId]
+						connections := connMgr.connectionsFor(clientId)
 						for cnt := range connections {
 							logs.Println("Sending the message to WS  client  ", message, connections[cnt].String())
 							connections[cnt].send <- []byte(message)
@@ -264,12 +378,12 @@ func ServeApns(w http.ResponseWriter, r *http.Request) {
 }
 
 func ServeNotifyCORS(w http.ResponseWriter, r *http.Request) {
-	 var headers = r.Header.Get("Access-Control-Request-Headers")
-	
+	var headers = r.Header.Get("Access-Control-Request-Headers")
+
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "POST")
-	
-	w.Header().Set("Access-Control-Allow-Headers",headers)
+
+	w.Header().Set("Access-Control-Allow-Headers", headers)
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -300,7 +414,7 @@ func ServeNotify(w http.ResponseWriter, r *http.Request) {
 		logs.Println("Handling notify:  Sending notification data to redisSender ", clientId)
 		redisSender <- notifyData
 		//Check whether clientId is connected.
-		currentConnections := clientConnections[clientId]
+		currentConnections := connMgr.connectionsFor(clientId)
 
 		notifyResponse := NotifyResponse{
 			Status:   (len(currentConnections) > 0),
@@ -329,34 +443,18 @@ func ServeWs(w http.ResponseWriter, r *http.Request) {
 	}
 	//new websocket connection
 	vars := mux.Vars(r)
-	clientId := vars["clientid"]
-	logs.Println("Creating new wsconnection for client : " + clientId)
-
-	currentConnections := clientConnections[clientId]
-	//Subscribe for a client only for the first connection.
-	if len(currentConnections) == 0 {
-		// Initialize redis client as subscriber
-
-		err = receiver.Subscribe(clientId)
-		if err != nil {
-			errMsg := "Failed to subscribe to message channel for " + clientId
-			log.Println(errMsg, err)
-			ws.WriteMessage(websocket.CloseInternalServerErr, []byte(errMsg))
-			ws.Close()
-			return
-		}
+	clientID := vars["clientid"]
+	logs.Println("Creating new wsconnection for client : " + clientID)
+	conn := connMgr.newConnectionFor(clientID, ws)
+	if conn.active {
+		go conn.sendMessages()
+		conn.receiveMessages()
+	} else {
+		errMsg := "Failed to subscribe to message channel for " + clientID
+		ws.WriteMessage(websocket.CloseInternalServerErr, []byte(errMsg))
+		ws.Close()
 	}
 
-	conn := &wsconnection{active: true, clientId: clientId, id: newUUID(), ws: ws, send: make(chan []byte, 256)}
-	logs.Println("Adding clientId-WsConn mapping for client  " + conn.String())
-
-	modifiedConnections := append(currentConnections, conn)
-	logs.Println("# connections for  client after appending the new one " + strconv.Itoa(len(modifiedConnections)))
-
-	clientConnections[clientId] = modifiedConnections
-	logs.Println("#  updated connections for  client  " + strconv.Itoa(len(clientConnections[clientId])))
-	go conn.sendMessages()
-	conn.receiveMessages()
 }
 
 func newUUID() string {
